@@ -41,7 +41,7 @@ model Reservation {
   payment   String   @default("unpaid")
   notes     String?
 
-  guest     Guest    @relation(fields: [guestId], references: [id])
+  guest     Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
   room      Room     @relation(fields: [roomId], references: [id])
 }
 
