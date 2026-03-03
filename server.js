@@ -337,6 +337,56 @@ app.post('/api/settings', async (req, res) => {
     }
 });
 
+// Security API: PIN verification
+app.post('/api/settings/verify-pin', async (req, res) => {
+    const { pin } = req.body;
+    try {
+        let setting = await prisma.setting.findUnique({ where: { key: 'adminPin' } });
+
+        // If pin doesn't exist in DB, create default "1234"
+        if (!setting) {
+            setting = await prisma.setting.create({ data: { key: 'adminPin', value: '1234' } });
+        }
+
+        if (setting.value === pin) {
+            res.json({ success: true });
+        } else {
+            res.status(401).json({ success: false, error: 'Nieprawidłowy PIN' });
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to verify PIN' });
+    }
+});
+
+app.put('/api/settings/pin', async (req, res) => {
+    const { oldPin, newPin } = req.body;
+    try {
+        let setting = await prisma.setting.findUnique({ where: { key: 'adminPin' } });
+        if (!setting) {
+            setting = await prisma.setting.create({ data: { key: 'adminPin', value: '1234' } });
+        }
+
+        if (setting.value !== oldPin) {
+            return res.status(401).json({ success: false, error: 'Stary PIN jest nieprawidłowy' });
+        }
+
+        if (newPin.length < 4) {
+            return res.status(400).json({ success: false, error: 'Nowy PIN musi mieć co najmniej 4 cyfry' });
+        }
+
+        await prisma.setting.update({
+            where: { key: 'adminPin' },
+            data: { value: newPin }
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update PIN' });
+    }
+});
+
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
 });
