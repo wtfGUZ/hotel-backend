@@ -187,6 +187,25 @@ app.delete('/api/reservations/:id', async (req, res) => {
     }
 });
 
+app.delete('/api/reservations/bulk/delete', async (req, res) => {
+    const { ids } = req.body; // array of string IDs
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'No IDs provided for bulk deletion' });
+    }
+
+    try {
+        await prisma.reservation.deleteMany({
+            where: {
+                id: { in: ids }
+            }
+        });
+        res.status(204).send();
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to bulk delete reservations' });
+    }
+});
+
 // API: Settings
 app.get('/api/settings/:key', async (req, res) => {
     const { key } = req.params;
@@ -220,8 +239,39 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+// Automatyczne usuwanie starych rezerwacji (starszych niż 14 dni od wymeldowania)
+const cleanupOldReservations = async () => {
+    try {
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+        // Format ISO string limitu, obcięty do samej daty (bez godzin dla pewności formatu z frontendem yyyy-mm-dd)
+        const dateLimitString = twoWeeksAgo.toISOString().split('T')[0];
+
+        const deleted = await prisma.reservation.deleteMany({
+            where: {
+                checkOut: {
+                    lt: dateLimitString // data wymeldowania mniejsza niż "14 dni temu"
+                }
+            }
+        });
+
+        if (deleted.count > 0) {
+            console.log(`[Auto-Cleanup] Usunięto ${deleted.count} starych rezerwacji (starszych niż 14 dni).`);
+        }
+    } catch (err) {
+        console.error('[Auto-Cleanup] Wystąpił błąd podczas usuwania starych rezerwacji:', err);
+    }
+};
+
 const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+
+    // Uruchom czyszczenie przy starcie serwera
+    cleanupOldReservations();
+
+    // Ustaw interwał czyszczenia na każde 24 godziny (86400000 ms)
+    setInterval(cleanupOldReservations, 24 * 60 * 60 * 1000);
 });
 
 server.on('error', (err) => {
