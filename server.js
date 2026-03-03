@@ -8,7 +8,12 @@ const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// CORS ograniczony do domeny frontendu
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'https://hotel-frontend-dun.vercel.app',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+}));
 app.use(express.json());
 
 // API: Pokoje
@@ -21,7 +26,7 @@ app.get('/api/rooms', async (req, res) => {
     }
 });
 
-app.put('/api/rooms/:id/status', authenticateToken, async (req, res) => {
+app.put('/api/rooms/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
@@ -35,27 +40,38 @@ app.put('/api/rooms/:id/status', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/rooms', authenticateToken, async (req, res) => {
+app.post('/api/rooms', async (req, res) => {
     const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status } = req.body;
+
+    if (!number || !name) {
+        return res.status(400).json({ error: 'Numer i nazwa pokoju są wymagane' });
+    }
+    if (!maxGuests || isNaN(parseInt(maxGuests)) || parseInt(maxGuests) < 1) {
+        return res.status(400).json({ error: 'Podaj prawidłową liczbę gości (min. 1)' });
+    }
+
     try {
         const room = await prisma.room.create({
             data: {
                 number,
                 name,
                 maxGuests: parseInt(maxGuests),
-                pricePerNight: parseFloat(pricePerNight),
-                priceWithBreakfast: parseFloat(priceWithBreakfast),
-                status
+                pricePerNight: parseFloat(pricePerNight) || 0,
+                priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,
+                status: status || 'clean'
             }
         });
         res.status(201).json(room);
     } catch (err) {
         console.error(err);
+        if (err.code === 'P2002') {
+            return res.status(409).json({ error: 'Pokój o tym numerze już istnieje' });
+        }
         res.status(500).json({ error: 'Failed to create room' });
     }
 });
 
-app.put('/api/rooms/:id', authenticateToken, async (req, res) => {
+app.put('/api/rooms/:id', async (req, res) => {
     const { id } = req.params;
     const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status } = req.body;
     try {
@@ -77,7 +93,7 @@ app.put('/api/rooms/:id', authenticateToken, async (req, res) => {
     }
 });
 
-app.delete('/api/rooms/:id', authenticateToken, async (req, res) => {
+app.delete('/api/rooms/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.room.delete({ where: { id: Number(id) } });
@@ -102,9 +118,14 @@ app.get('/api/guests', async (req, res) => {
 
 app.post('/api/guests', async (req, res) => {
     const { firstName, lastName, email, phone } = req.body;
+
+    if (!firstName || !lastName) {
+        return res.status(400).json({ error: 'Imię i nazwisko są wymagane' });
+    }
+
     try {
         const guest = await prisma.guest.create({
-            data: { firstName, lastName, email, phone }
+            data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email || '', phone: phone || '' }
         });
         res.status(201).json(guest);
     } catch (err) {
@@ -152,6 +173,14 @@ app.get('/api/reservations', async (req, res) => {
 
 app.post('/api/reservations', async (req, res) => {
     const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
+
+    if (!guestId || !roomId || !checkIn || !checkOut) {
+        return res.status(400).json({ error: 'Gość, pokój, data zameldowania i wymeldowania są wymagane' });
+    }
+    if (new Date(checkIn) >= new Date(checkOut)) {
+        return res.status(400).json({ error: 'Data wymeldowania musi być późniejsza niż zameldowania' });
+    }
+
     try {
         // Sprawdzenie konfliktów (Overbooking Prevention)
         const overlapping = await prisma.reservation.findFirst({
@@ -169,7 +198,16 @@ app.post('/api/reservations', async (req, res) => {
         }
 
         const resv = await prisma.reservation.create({
-            data: { guestId, roomId: parseInt(roomId), checkIn, checkOut, breakfast, status, payment, notes }
+            data: {
+                guestId,
+                roomId: parseInt(roomId),
+                checkIn,
+                checkOut,
+                breakfast: Boolean(breakfast),
+                status: status || 'preliminary',
+                payment: payment || 'unpaid',
+                notes: notes || ''
+            }
         });
         res.status(201).json(resv);
     } catch (err) {
