@@ -278,43 +278,58 @@ app.post('/api/ical/sync', async (req, res) => {
             return local.toISOString().split('T')[0];
         };
 
+        // Collect all UIDs present in the current iCal feed (excluding blocked/invalid)
+        const activeUids = new Set();
+
         for (const key in events) {
             if (events[key].type === 'VEVENT') {
                 const event = events[key];
+                const uid = event.uid;
+                if (!uid) continue;
+
                 const start = new Date(event.start);
                 const end = new Date(event.end);
-
                 const checkInString = toDateString(start);
                 const checkOutString = toDateString(end);
-
-                // Parse guest name
                 const guestName = parseGuestName(event.summary);
 
-                // Skip fully blocked dates (no guest name = unavailability block)
+                // Skip blocked/closed entries
                 if (guestName === null && event.summary &&
                     ['closed', 'not available', 'blocked', 'unavailable'].some(kw =>
                         event.summary.toLowerCase().includes(kw))) {
-                    skippedCount++;
                     continue;
                 }
+
+                activeUids.add(uid);
 
                 const bookingGuest = guestName
                     ? await findOrCreateGuest(guestName)
                     : await getFallbackGuest();
 
-                // Check for duplicate (same guest + same dates)
-                const isDuplicate = existingResvs.some(r =>
-                    r.guestId === bookingGuest.id &&
-                    r.checkIn === checkInString &&
-                    r.checkOut === checkOutString
-                );
+                // Check if we already have this reservation by UID
+                const existing = existingResvs.find(r => r.externalId === uid);
 
-                if (isDuplicate) {
-                    skippedCount++;
+                if (existing) {
+                    // Already exists — check if dates or guest changed (booking modified)
+                    if (existing.checkIn !== checkInString ||
+                        existing.checkOut !== checkOutString ||
+                        existing.guestId !== bookingGuest.id) {
+                        await prisma.reservation.update({
+                            where: { id: existing.id },
+                            data: {
+                                checkIn: checkInString,
+                                checkOut: checkOutString,
+                                guestId: bookingGuest.id
+                            }
+                        });
+                        importedCount++; // count as updated
+                    } else {
+                        skippedCount++;
+                    }
                     continue;
                 }
 
-                // Find first available room
+                // New reservation — find first available room
                 let assignedRoomId = null;
                 for (const room of allRooms) {
                     const hasConflict = existingResvs.some(r => {
@@ -345,6 +360,7 @@ app.post('/api/ical/sync', async (req, res) => {
                 if (assignedRoomId) {
                     const newRes = await prisma.reservation.create({
                         data: {
+                            externalId: uid,
                             guestId: bookingGuest.id,
                             roomId: assignedRoomId,
                             checkIn: checkInString,
@@ -363,7 +379,22 @@ app.post('/api/ical/sync', async (req, res) => {
             }
         }
 
-        res.json({ importedCount, skippedCount, conflictCount });
+        // Auto-delete reservations that were in Booking.com iCal before but are now gone (cancelled)
+        const cancelledResvs = existingResvs.filter(r =>
+            r.externalId !== null &&
+            r.externalId !== undefined &&
+            !activeUids.has(r.externalId)
+        );
+
+        let cancelledCount = 0;
+        if (cancelledResvs.length > 0) {
+            await prisma.reservation.deleteMany({
+                where: { id: { in: cancelledResvs.map(r => r.id) } }
+            });
+            cancelledCount = cancelledResvs.length;
+        }
+
+        res.json({ importedCount, skippedCount, conflictCount, cancelledCount });
     } catch (err) {
         console.error('iCal processing error:', err);
         res.status(500).json({ error: 'Błąd podczas synchronizacji iCal' });

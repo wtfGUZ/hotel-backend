@@ -31,15 +31,16 @@ model Guest {
 }
 
 model Reservation {
-  id        String   @id @default(uuid())
-  guestId   String
-  roomId    Int
-  checkIn   String
-  checkOut  String
-  breakfast Boolean  @default(false)
-  status    String   @default("preliminary")
-  payment   String   @default("unpaid")
-  notes     String?
+  id         String   @id @default(uuid())
+  externalId String?  @unique
+  guestId    String
+  roomId     Int
+  checkIn    String
+  checkOut   String
+  breakfast  Boolean  @default(false)
+  status     String   @default("preliminary")
+  payment    String   @default("unpaid")
+  notes      String?
 
   guest     Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
   room      Room     @relation(fields: [roomId], references: [id])
