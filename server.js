@@ -2,17 +2,33 @@ const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const ical = require('node-ical');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'hotel_manager_super_secret_key_123';
 
 app.use(cors());
 app.use(express.json());
 
+// Middleware autoryzacyjny JWT
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ error: 'Brak tokenu autoryzacyjnego' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Nieprawidłowy lub wygasły token' });
+        req.user = user;
+        next();
+    });
+};
+
 // API: Pokoje
-app.get('/api/rooms', async (req, res) => {
+app.get('/api/rooms', authenticateToken, async (req, res) => {
     try {
         const rooms = await prisma.room.findMany({ orderBy: { id: 'asc' } });
         res.json(rooms);
@@ -21,7 +37,7 @@ app.get('/api/rooms', async (req, res) => {
     }
 });
 
-app.put('/api/rooms/:id/status', async (req, res) => {
+app.put('/api/rooms/:id/status', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
@@ -35,7 +51,7 @@ app.put('/api/rooms/:id/status', async (req, res) => {
     }
 });
 
-app.post('/api/rooms', async (req, res) => {
+app.post('/api/rooms', authenticateToken, async (req, res) => {
     const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status } = req.body;
     try {
         const room = await prisma.room.create({
@@ -55,7 +71,7 @@ app.post('/api/rooms', async (req, res) => {
     }
 });
 
-app.put('/api/rooms/:id', async (req, res) => {
+app.put('/api/rooms/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status } = req.body;
     try {
@@ -77,7 +93,7 @@ app.put('/api/rooms/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/rooms/:id', async (req, res) => {
+app.delete('/api/rooms/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.room.delete({ where: { id: Number(id) } });
@@ -90,7 +106,7 @@ app.delete('/api/rooms/:id', async (req, res) => {
 
 
 // API: Goście
-app.get('/api/guests', async (req, res) => {
+app.get('/api/guests', authenticateToken, async (req, res) => {
     try {
         const guests = await prisma.guest.findMany({ orderBy: { id: 'asc' } });
         res.json(guests);
@@ -100,7 +116,7 @@ app.get('/api/guests', async (req, res) => {
     }
 });
 
-app.post('/api/guests', async (req, res) => {
+app.post('/api/guests', authenticateToken, async (req, res) => {
     const { firstName, lastName, email, phone } = req.body;
     try {
         const guest = await prisma.guest.create({
@@ -113,7 +129,7 @@ app.post('/api/guests', async (req, res) => {
     }
 });
 
-app.put('/api/guests/:id', async (req, res) => {
+app.put('/api/guests/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone } = req.body;
     try {
@@ -128,7 +144,7 @@ app.put('/api/guests/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/guests/:id', async (req, res) => {
+app.delete('/api/guests/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.guest.delete({ where: { id } });
@@ -140,7 +156,7 @@ app.delete('/api/guests/:id', async (req, res) => {
 });
 
 // API: Rezerwacje
-app.get('/api/reservations', async (req, res) => {
+app.get('/api/reservations', authenticateToken, async (req, res) => {
     try {
         const reservations = await prisma.reservation.findMany({ orderBy: { id: 'asc' } });
         res.json(reservations);
@@ -150,9 +166,24 @@ app.get('/api/reservations', async (req, res) => {
     }
 });
 
-app.post('/api/reservations', async (req, res) => {
+app.post('/api/reservations', authenticateToken, async (req, res) => {
     const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
     try {
+        // Sprawdzenie konfliktów (Overbooking Prevention)
+        const overlapping = await prisma.reservation.findFirst({
+            where: {
+                roomId: parseInt(roomId),
+                AND: [
+                    { checkIn: { lt: checkOut } },
+                    { checkOut: { gt: checkIn } }
+                ]
+            }
+        });
+
+        if (overlapping) {
+            return res.status(409).json({ error: 'Wybrany pokój jest zajęty w tych terminach' });
+        }
+
         const resv = await prisma.reservation.create({
             data: { guestId, roomId: parseInt(roomId), checkIn, checkOut, breakfast, status, payment, notes }
         });
@@ -163,10 +194,26 @@ app.post('/api/reservations', async (req, res) => {
     }
 });
 
-app.put('/api/reservations/:id', async (req, res) => {
+app.put('/api/reservations/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
     try {
+        // Sprawdzenie konfliktów przy edycji (wyłączając aktualnie edytowaną rezerwację z wyniku)
+        const overlapping = await prisma.reservation.findFirst({
+            where: {
+                roomId: parseInt(roomId),
+                id: { not: id },
+                AND: [
+                    { checkIn: { lt: checkOut } },
+                    { checkOut: { gt: checkIn } }
+                ]
+            }
+        });
+
+        if (overlapping) {
+            return res.status(409).json({ error: 'Wybrany pokój jest zajęty w tych terminach' });
+        }
+
         const resv = await prisma.reservation.update({
             where: { id },
             data: { guestId, roomId: parseInt(roomId), checkIn, checkOut, breakfast, status, payment, notes }
@@ -178,7 +225,7 @@ app.put('/api/reservations/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/reservations/:id', async (req, res) => {
+app.delete('/api/reservations/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.reservation.delete({ where: { id } });
@@ -188,7 +235,7 @@ app.delete('/api/reservations/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/reservations/bulk/delete', async (req, res) => {
+app.delete('/api/reservations/bulk/delete', authenticateToken, async (req, res) => {
     const { ids } = req.body; // array of string IDs
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: 'No IDs provided for bulk deletion' });
@@ -207,7 +254,7 @@ app.delete('/api/reservations/bulk/delete', async (req, res) => {
     }
 });
 
-app.post('/api/ical/sync', async (req, res) => {
+app.post('/api/ical/sync', authenticateToken, async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
@@ -412,7 +459,7 @@ app.get('/api/settings/:key', async (req, res) => {
     }
 });
 
-app.post('/api/settings', async (req, res) => {
+app.post('/api/settings', authenticateToken, async (req, res) => {
     const { key, value } = req.body;
     try {
         const setting = await prisma.setting.upsert({
@@ -438,7 +485,8 @@ app.post('/api/settings/verify-pin', async (req, res) => {
         }
 
         if (setting.value === pin) {
-            res.json({ success: true });
+            const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '30d' });
+            res.json({ success: true, token });
         } else {
             res.status(401).json({ success: false, error: 'Nieprawidłowy PIN' });
         }
@@ -448,7 +496,7 @@ app.post('/api/settings/verify-pin', async (req, res) => {
     }
 });
 
-app.put('/api/settings/pin', async (req, res) => {
+app.put('/api/settings/pin', authenticateToken, async (req, res) => {
     const { oldPin, newPin } = req.body;
     try {
         let setting = await prisma.setting.findUnique({ where: { key: 'adminPin' } });
