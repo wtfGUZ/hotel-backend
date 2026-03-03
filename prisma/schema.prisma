@@ -41,6 +41,7 @@ model Reservation {
   status     String   @default("preliminary")
   payment    String   @default("unpaid")
   notes      String?
+  archived   Boolean  @default(false)
 
   guest     Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
   room      Room     @relation(fields: [roomId], references: [id])
