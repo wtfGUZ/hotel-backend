@@ -90,7 +90,7 @@ app.delete('/api/rooms/:id', authenticateToken, async (req, res) => {
 
 
 // API: Goście
-app.get('/api/guests', authenticateToken, async (req, res) => {
+app.get('/api/guests', async (req, res) => {
     try {
         const guests = await prisma.guest.findMany({ orderBy: { id: 'asc' } });
         res.json(guests);
@@ -100,7 +100,7 @@ app.get('/api/guests', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/guests', authenticateToken, async (req, res) => {
+app.post('/api/guests', async (req, res) => {
     const { firstName, lastName, email, phone } = req.body;
     try {
         const guest = await prisma.guest.create({
@@ -113,7 +113,7 @@ app.post('/api/guests', authenticateToken, async (req, res) => {
     }
 });
 
-app.put('/api/guests/:id', authenticateToken, async (req, res) => {
+app.put('/api/guests/:id', async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone } = req.body;
     try {
