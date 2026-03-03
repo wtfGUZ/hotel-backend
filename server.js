@@ -2,33 +2,17 @@ const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const ical = require('node-ical');
-const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'hotel_manager_super_secret_key_123';
 
 app.use(cors());
 app.use(express.json());
 
-// Middleware autoryzacyjny JWT
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) return res.status(401).json({ error: 'Brak tokenu autoryzacyjnego' });
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: 'Nieprawidłowy lub wygasły token' });
-        req.user = user;
-        next();
-    });
-};
-
 // API: Pokoje
-app.get('/api/rooms', authenticateToken, async (req, res) => {
+app.get('/api/rooms', async (req, res) => {
     try {
         const rooms = await prisma.room.findMany({ orderBy: { id: 'asc' } });
         res.json(rooms);
@@ -144,7 +128,7 @@ app.put('/api/guests/:id', authenticateToken, async (req, res) => {
     }
 });
 
-app.delete('/api/guests/:id', authenticateToken, async (req, res) => {
+app.delete('/api/guests/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.guest.delete({ where: { id } });
@@ -156,7 +140,7 @@ app.delete('/api/guests/:id', authenticateToken, async (req, res) => {
 });
 
 // API: Rezerwacje
-app.get('/api/reservations', authenticateToken, async (req, res) => {
+app.get('/api/reservations', async (req, res) => {
     try {
         const reservations = await prisma.reservation.findMany({ orderBy: { id: 'asc' } });
         res.json(reservations);
@@ -166,7 +150,7 @@ app.get('/api/reservations', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/reservations', authenticateToken, async (req, res) => {
+app.post('/api/reservations', async (req, res) => {
     const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
     try {
         // Sprawdzenie konfliktów (Overbooking Prevention)
@@ -194,7 +178,7 @@ app.post('/api/reservations', authenticateToken, async (req, res) => {
     }
 });
 
-app.put('/api/reservations/:id', authenticateToken, async (req, res) => {
+app.put('/api/reservations/:id', async (req, res) => {
     const { id } = req.params;
     const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
     try {
@@ -225,7 +209,7 @@ app.put('/api/reservations/:id', authenticateToken, async (req, res) => {
     }
 });
 
-app.delete('/api/reservations/:id', authenticateToken, async (req, res) => {
+app.delete('/api/reservations/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.reservation.delete({ where: { id } });
@@ -235,7 +219,7 @@ app.delete('/api/reservations/:id', authenticateToken, async (req, res) => {
     }
 });
 
-app.delete('/api/reservations/bulk/delete', authenticateToken, async (req, res) => {
+app.delete('/api/reservations/bulk/delete', async (req, res) => {
     const { ids } = req.body; // array of string IDs
     if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ error: 'No IDs provided for bulk deletion' });
@@ -254,7 +238,8 @@ app.delete('/api/reservations/bulk/delete', authenticateToken, async (req, res) 
     }
 });
 
-app.post('/api/ical/sync', authenticateToken, async (req, res) => {
+// API: iCal
+app.post('/api/ical/sync', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
@@ -459,7 +444,7 @@ app.get('/api/settings/:key', async (req, res) => {
     }
 });
 
-app.post('/api/settings', authenticateToken, async (req, res) => {
+app.post('/api/settings', async (req, res) => {
     const { key, value } = req.body;
     try {
         const setting = await prisma.setting.upsert({
@@ -485,8 +470,7 @@ app.post('/api/settings/verify-pin', async (req, res) => {
         }
 
         if (setting.value === pin) {
-            const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '30d' });
-            res.json({ success: true, token });
+            res.json({ success: true });
         } else {
             res.status(401).json({ success: false, error: 'Nieprawidłowy PIN' });
         }
@@ -496,31 +480,26 @@ app.post('/api/settings/verify-pin', async (req, res) => {
     }
 });
 
-app.put('/api/settings/pin', authenticateToken, async (req, res) => {
+// Zmiany PIN
+app.put('/api/settings/pin', async (req, res) => {
     const { oldPin, newPin } = req.body;
     try {
-        let setting = await prisma.setting.findUnique({ where: { key: 'adminPin' } });
-        if (!setting) {
-            setting = await prisma.setting.create({ data: { key: 'adminPin', value: '1234' } });
+        const pinRecord = await prisma.setting.findUnique({ where: { key: 'adminPin' } });
+        const currentPin = pinRecord ? pinRecord.value : '1234';
+
+        if (currentPin !== oldPin) {
+            return res.status(403).json({ success: false, message: 'Obecny PIN jest nieprawidłowy' });
         }
 
-        if (setting.value !== oldPin) {
-            return res.status(401).json({ success: false, error: 'Stary PIN jest nieprawidłowy' });
-        }
-
-        if (newPin.length < 4) {
-            return res.status(400).json({ success: false, error: 'Nowy PIN musi mieć co najmniej 4 cyfry' });
-        }
-
-        await prisma.setting.update({
+        await prisma.setting.upsert({
             where: { key: 'adminPin' },
-            data: { value: newPin }
+            create: { key: 'adminPin', value: newPin },
+            update: { value: newPin },
         });
 
-        res.json({ success: true });
+        res.json({ success: true, message: 'PIN został zmieniony' });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to update PIN' });
+        res.status(500).json({ error: 'Failed to change PIN' });
     }
 });
 
