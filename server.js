@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
+const ical = require('node-ical');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -203,6 +204,111 @@ app.delete('/api/reservations/bulk/delete', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to bulk delete reservations' });
+    }
+});
+
+// API: iCal Sync
+app.post('/api/ical/sync', async (req, res) => {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'No URL provided' });
+
+    try {
+        const events = await ical.async.fromURL(url);
+
+        let bookingGuest = await prisma.guest.findFirst({
+            where: { firstName: 'Gość', lastName: 'Booking.com' }
+        });
+        if (!bookingGuest) {
+            bookingGuest = await prisma.guest.create({
+                data: { firstName: 'Gość', lastName: 'Booking.com', email: '', phone: '' }
+            });
+        }
+
+        let importedCount = 0;
+        let skippedCount = 0;
+        let conflictCount = 0;
+
+        const allRooms = await prisma.room.findMany();
+        const existingResvs = await prisma.reservation.findMany();
+
+        for (const key in events) {
+            if (events[key].type === 'VEVENT') {
+                const event = events[key];
+                const start = new Date(event.start);
+                const end = new Date(event.end);
+
+                const toDateString = (date) => {
+                    const local = new Date(date);
+                    local.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+                    return local.toISOString().split('T')[0];
+                };
+
+                const checkInString = toDateString(start);
+                const checkOutString = toDateString(end);
+
+                const isDuplicate = existingResvs.some(r =>
+                    r.guestId === bookingGuest.id &&
+                    r.checkIn === checkInString &&
+                    r.checkOut === checkOutString
+                );
+
+                if (isDuplicate) {
+                    skippedCount++;
+                    continue;
+                }
+
+                let assignedRoomId = null;
+                for (const room of allRooms) {
+                    const hasConflict = existingResvs.some(r => {
+                        if (r.roomId !== room.id) return false;
+
+                        const rIn = new Date(r.checkIn);
+                        const rOut = new Date(r.checkOut);
+                        rIn.setHours(0, 0, 0, 0);
+                        rOut.setHours(0, 0, 0, 0);
+
+                        const newStart = new Date(start);
+                        const newEnd = new Date(end);
+                        newStart.setHours(0, 0, 0, 0);
+                        newEnd.setHours(0, 0, 0, 0);
+
+                        if (newStart.getTime() >= rOut.getTime()) return false;
+                        if (newEnd.getTime() <= rIn.getTime()) return false;
+
+                        return true;
+                    });
+
+                    if (!hasConflict) {
+                        assignedRoomId = room.id;
+                        break;
+                    }
+                }
+
+                if (assignedRoomId) {
+                    const newRes = await prisma.reservation.create({
+                        data: {
+                            guestId: bookingGuest.id,
+                            roomId: assignedRoomId,
+                            checkIn: checkInString,
+                            checkOut: checkOutString,
+                            status: 'confirmed',
+                            payment: 'booking',
+                            breakfast: false,
+                            notes: `Auto import z iCal. Tytuł: ${event.summary || 'Booking'}`
+                        }
+                    });
+                    existingResvs.push(newRes);
+                    importedCount++;
+                } else {
+                    conflictCount++;
+                }
+            }
+        }
+
+        res.json({ importedCount, skippedCount, conflictCount });
+    } catch (err) {
+        console.error('iCal processing error:', err);
+        res.status(500).json({ error: 'Błąd podczas synchronizacji iCal' });
     }
 });
 
