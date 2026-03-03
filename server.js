@@ -207,22 +207,12 @@ app.delete('/api/reservations/bulk/delete', async (req, res) => {
     }
 });
 
-// API: iCal Sync
 app.post('/api/ical/sync', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
     try {
         const events = await ical.async.fromURL(url);
-
-        let bookingGuest = await prisma.guest.findFirst({
-            where: { firstName: 'Gość', lastName: 'Booking.com' }
-        });
-        if (!bookingGuest) {
-            bookingGuest = await prisma.guest.create({
-                data: { firstName: 'Gość', lastName: 'Booking.com', email: '', phone: '' }
-            });
-        }
 
         let importedCount = 0;
         let skippedCount = 0;
@@ -231,21 +221,88 @@ app.post('/api/ical/sync', async (req, res) => {
         const allRooms = await prisma.room.findMany();
         const existingResvs = await prisma.reservation.findMany();
 
+        // Helper: parse guest name from Booking.com SUMMARY
+        // Booking sends e.g. "Jan Kowalski", "BOOKING.COM - Jan K.", "Closed - not available"
+        const parseGuestName = (summary) => {
+            if (!summary) return null;
+            const s = summary.trim();
+
+            // Skip blocked/closed entries
+            const blockedKeywords = ['closed', 'not available', 'blocked', 'unavailable', 'maintenance'];
+            if (blockedKeywords.some(kw => s.toLowerCase().includes(kw))) return null;
+
+            // Remove "BOOKING.COM - " prefix if present
+            const cleaned = s.replace(/^BOOKING\.COM\s*[-–]\s*/i, '').trim();
+            return cleaned || null;
+        };
+
+        // Helper: find or create a guest by name
+        const findOrCreateGuest = async (rawName) => {
+            const parts = rawName.trim().split(/\s+/);
+            const firstName = parts[0] || 'Gość';
+            const lastName = parts.slice(1).join(' ') || 'Booking.com';
+
+            // Try to find existing guest with this name
+            let guest = await prisma.guest.findFirst({
+                where: { firstName, lastName }
+            });
+
+            if (!guest) {
+                guest = await prisma.guest.create({
+                    data: { firstName, lastName, email: '', phone: '' }
+                });
+            }
+
+            return guest;
+        };
+
+        // Fallback guest for events with no name
+        let fallbackGuest = null;
+        const getFallbackGuest = async () => {
+            if (!fallbackGuest) {
+                fallbackGuest = await prisma.guest.findFirst({
+                    where: { firstName: 'Gość', lastName: 'Booking.com' }
+                });
+                if (!fallbackGuest) {
+                    fallbackGuest = await prisma.guest.create({
+                        data: { firstName: 'Gość', lastName: 'Booking.com', email: '', phone: '' }
+                    });
+                }
+            }
+            return fallbackGuest;
+        };
+
+        const toDateString = (date) => {
+            const local = new Date(date);
+            local.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+            return local.toISOString().split('T')[0];
+        };
+
         for (const key in events) {
             if (events[key].type === 'VEVENT') {
                 const event = events[key];
                 const start = new Date(event.start);
                 const end = new Date(event.end);
 
-                const toDateString = (date) => {
-                    const local = new Date(date);
-                    local.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-                    return local.toISOString().split('T')[0];
-                };
-
                 const checkInString = toDateString(start);
                 const checkOutString = toDateString(end);
 
+                // Parse guest name
+                const guestName = parseGuestName(event.summary);
+
+                // Skip fully blocked dates (no guest name = unavailability block)
+                if (guestName === null && event.summary &&
+                    ['closed', 'not available', 'blocked', 'unavailable'].some(kw =>
+                        event.summary.toLowerCase().includes(kw))) {
+                    skippedCount++;
+                    continue;
+                }
+
+                const bookingGuest = guestName
+                    ? await findOrCreateGuest(guestName)
+                    : await getFallbackGuest();
+
+                // Check for duplicate (same guest + same dates)
                 const isDuplicate = existingResvs.some(r =>
                     r.guestId === bookingGuest.id &&
                     r.checkIn === checkInString &&
@@ -257,6 +314,7 @@ app.post('/api/ical/sync', async (req, res) => {
                     continue;
                 }
 
+                // Find first available room
                 let assignedRoomId = null;
                 for (const room of allRooms) {
                     const hasConflict = existingResvs.some(r => {
@@ -294,7 +352,7 @@ app.post('/api/ical/sync', async (req, res) => {
                             status: 'confirmed',
                             payment: 'booking',
                             breakfast: false,
-                            notes: `Auto import z iCal. Tytuł: ${event.summary || 'Booking'}`
+                            notes: `Import z Booking.com iCal`
                         }
                     });
                     existingResvs.push(newRes);
