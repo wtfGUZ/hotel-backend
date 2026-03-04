@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 // POST sync iCal
 router.post('/sync', async (req, res) => {
-    const { url, categoryId } = req.body;
+    const { url, categoryId, categoryIds } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
     try {
@@ -106,7 +106,9 @@ router.post('/sync', async (req, res) => {
                 // If a category was requested but it has no assigned rooms, we will not assign the booking
                 // (it will fall into conflictCount to alert the user).
                 let candidateRooms = allRooms;
-                if (categoryId) {
+                if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+                    candidateRooms = allRooms.filter(r => categoryIds.includes(String(r.categoryId)));
+                } else if (categoryId) {
                     candidateRooms = allRooms.filter(r => r.categoryId === String(categoryId));
                 }
 
