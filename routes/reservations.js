@@ -33,7 +33,7 @@ router.get('/archived', async (req, res) => {
 
 // POST create reservation
 router.post('/', async (req, res) => {
-    const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
+    const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes, groupId } = req.body;
 
     if (!guestId || !roomId || !checkIn || !checkOut) {
         return res.status(400).json({ error: 'Gość, pokój, data zameldowania i wymeldowania są wymagane' });
@@ -67,7 +67,8 @@ router.post('/', async (req, res) => {
                 breakfast: Boolean(breakfast),
                 status: status || 'preliminary',
                 payment: payment || 'unpaid',
-                notes: notes || ''
+                notes: notes || '',
+                groupId: groupId || null
             }
         });
         res.status(201).json(resv);
@@ -80,7 +81,7 @@ router.post('/', async (req, res) => {
 // PUT update reservation
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
-    const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes } = req.body;
+    const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes, groupId } = req.body;
     try {
         const overlapping = await prisma.reservation.findFirst({
             where: {
@@ -100,7 +101,7 @@ router.put('/:id', async (req, res) => {
 
         const resv = await prisma.reservation.update({
             where: { id },
-            data: { guestId, roomId: parseInt(roomId), checkIn, checkOut, breakfast, status, payment, notes }
+            data: { guestId, roomId: parseInt(roomId), checkIn, checkOut, breakfast, status, payment, notes, groupId: groupId !== undefined ? groupId : undefined }
         });
         res.json(resv);
     } catch (err) {
