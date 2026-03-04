@@ -33,7 +33,7 @@ router.get('/archived', async (req, res) => {
 
 // POST create reservation
 router.post('/', async (req, res) => {
-    const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes, groupId } = req.body;
+    const { guestId, roomId, checkIn, checkOut, breakfast, status, payment, notes, groupId, isNewIcal } = req.body;
 
     if (!guestId || !roomId || !checkIn || !checkOut) {
         return res.status(400).json({ error: 'Gość, pokój, data zameldowania i wymeldowania są wymagane' });
@@ -68,7 +68,8 @@ router.post('/', async (req, res) => {
                 status: status || 'preliminary',
                 payment: payment || 'unpaid',
                 notes: notes || '',
-                groupId: groupId || null
+                groupId: groupId || null,
+                isNewIcal: isNewIcal || false
             }
         });
         res.status(201).json(resv);
