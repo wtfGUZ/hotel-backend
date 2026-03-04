@@ -143,7 +143,8 @@ router.post('/sync', async (req, res) => {
                             status: 'confirmed',
                             payment: 'booking',
                             breakfast: false,
-                            notes: 'Import z Booking.com iCal'
+                            notes: 'Import z Booking.com iCal',
+                            isNewIcal: true
                         }
                     });
                     existingResvs.push(newRes);

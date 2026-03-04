@@ -139,4 +139,19 @@ router.delete('/bulk/delete', async (req, res) => {
     }
 });
 
+// PUT /reservations/:id/acknowledge
+router.put('/:id/acknowledge', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await prisma.reservation.update({
+            where: { id },
+            data: { isNewIcal: false }
+        });
+        res.json(result);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to acknowledge new reservation notification.' });
+    }
+});
+
 module.exports = router;

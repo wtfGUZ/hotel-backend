@@ -44,6 +44,7 @@ model Reservation {
   notes      String?
   groupId    String?
   archived   Boolean  @default(false)
+  isNewIcal  Boolean  @default(false)
 
   guest     Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
   room      Room     @relation(fields: [roomId], references: [id])
