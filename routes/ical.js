@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 // POST sync iCal
 router.post('/sync', async (req, res) => {
-    const { url, roomId } = req.body;
+    const { url, categoryId } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
     try {
@@ -78,20 +78,19 @@ router.post('/sync', async (req, res) => {
                     : await getFallbackGuest();
 
                 const existing = existingResvs.find(r => r.externalId === uid);
-                const targetRoomId = roomId ? parseInt(roomId) : null;
 
+                // If it already exists, just update checkIn/checkOut/guestId
+                // We keep the room it was already assigned to to avoid unnecessary shuffling.
                 if (existing) {
                     if (existing.checkIn !== checkInString ||
                         existing.checkOut !== checkOutString ||
-                        existing.guestId !== bookingGuest.id ||
-                        (targetRoomId && existing.roomId !== targetRoomId)) {
+                        existing.guestId !== bookingGuest.id) {
                         await prisma.reservation.update({
                             where: { id: existing.id },
                             data: {
                                 checkIn: checkInString,
                                 checkOut: checkOutString,
-                                guestId: bookingGuest.id,
-                                ...(targetRoomId && { roomId: targetRoomId })
+                                guestId: bookingGuest.id
                             }
                         });
                         importedCount++;
@@ -101,30 +100,35 @@ router.post('/sync', async (req, res) => {
                     continue;
                 }
 
-                let assignedRoomId = targetRoomId;
+                let assignedRoomId = null;
 
-                // If no specific room is targeted, try to find a free one
-                if (!assignedRoomId) {
-                    for (const room of allRooms) {
-                        const hasConflict = existingResvs.some(r => {
-                            if (r.roomId !== room.id) return false;
-                            const rIn = new Date(r.checkIn);
-                            const rOut = new Date(r.checkOut);
-                            rIn.setHours(0, 0, 0, 0);
-                            rOut.setHours(0, 0, 0, 0);
-                            const newStart = new Date(start);
-                            const newEnd = new Date(end);
-                            newStart.setHours(0, 0, 0, 0);
-                            newEnd.setHours(0, 0, 0, 0);
-                            if (newStart.getTime() >= rOut.getTime()) return false;
-                            if (newEnd.getTime() <= rIn.getTime()) return false;
-                            return true;
-                        });
+                // Find a free room. If categoryId is specified, only look in that category.
+                // If a category was requested but it has no assigned rooms, we will not assign the booking
+                // (it will fall into conflictCount to alert the user).
+                let candidateRooms = allRooms;
+                if (categoryId) {
+                    candidateRooms = allRooms.filter(r => r.categoryId === String(categoryId));
+                }
 
-                        if (!hasConflict) {
-                            assignedRoomId = room.id;
-                            break;
-                        }
+                for (const room of candidateRooms) {
+                    const hasConflict = existingResvs.some(r => {
+                        if (r.roomId !== room.id) return false;
+                        const rIn = new Date(r.checkIn);
+                        const rOut = new Date(r.checkOut);
+                        rIn.setHours(0, 0, 0, 0);
+                        rOut.setHours(0, 0, 0, 0);
+                        const newStart = new Date(start);
+                        const newEnd = new Date(end);
+                        newStart.setHours(0, 0, 0, 0);
+                        newEnd.setHours(0, 0, 0, 0);
+                        if (newStart.getTime() >= rOut.getTime()) return false;
+                        if (newEnd.getTime() <= rIn.getTime()) return false;
+                        return true;
+                    });
+
+                    if (!hasConflict) {
+                        assignedRoomId = room.id;
+                        break;
                     }
                 }
 
