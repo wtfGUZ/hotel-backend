@@ -154,9 +154,9 @@ router.post('/sync', async (req, res) => {
                             roomId: assignedRoomId,
                             checkIn: checkInString,
                             checkOut: checkOutString,
-                            status: 'paid',
+                            status: 'confirmed',
                             payment: 'booking',
-                            breakfast: false,
+                            breakfast: true,
                             notes: 'Import z Booking.com iCal',
                             isNewIcal: true
                         }
