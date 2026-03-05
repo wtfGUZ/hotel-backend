@@ -171,10 +171,16 @@ router.post('/sync', async (req, res) => {
     }
 });
 
-// GET /export/:categoryIds - Export internal reservations to iCal (ICS)
-router.get('/export/:categoryIds', async (req, res) => {
+// GET /export/:categoryIds/calendar.ics - Export internal reservations to iCal (ICS)
+router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
     try {
         const ids = req.params.categoryIds.split(',').map(id => id.trim());
+
+        // Fetch categories to get names for X-WR-CALNAME
+        const settings = await prisma.setting.findUnique({ where: { key: 'roomCategories' } });
+        const allCats = settings ? JSON.parse(settings.value) : [];
+        const requestedCats = allCats.filter(c => ids.includes(c.id));
+        const calName = requestedCats.map(c => c.name).join(', ') || 'Hotel Reservations';
 
         const reservations = await prisma.reservation.findMany({
             where: {
@@ -189,12 +195,25 @@ router.get('/export/:categoryIds', async (req, res) => {
             }
         });
 
+        // Helper to escape text for iCal (commas, semicolons, backslashes, newlines)
+        const escapeICS = (str) => {
+            if (!str) return '';
+            return str.toString()
+                .replace(/\\/g, '\\\\')
+                .replace(/,/g, '\\,')
+                .replace(/;/g, '\\;')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '');
+        };
+
         let ics = [
             'BEGIN:VCALENDAR',
             'VERSION:2.0',
             'PRODID:-//HotelManager//iCal Export//PL',
             'CALSCALE:GREGORIAN',
-            'METHOD:PUBLISH'
+            'METHOD:PUBLISH',
+            `X-WR-CALNAME:${escapeICS(calName)}`,
+            'X-WR-TIMEZONE:Europe/Warsaw'
         ];
 
         const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -203,14 +222,17 @@ router.get('/export/:categoryIds', async (req, res) => {
             const start = r.checkIn.replace(/-/g, '');
             const end = r.checkOut.replace(/-/g, '');
             const uid = r.externalId || `res-${r.id}@hotelmanager.internal`;
+            const summary = `RESERVATION - ${r.guest.firstName} ${r.guest.lastName}`;
+            const description = `Pokój: ${r.room.number} ${r.room.name}\nStatus: ${r.status}\nNotatki: ${r.notes || ''}`;
 
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
-            ics.push(`SUMMARY:RESERVATION - ${r.guest.firstName} ${r.guest.lastName}`);
-            ics.push(`DESCRIPTION:Pokój: ${r.room.number} ${r.room.name}\\nStatus: ${r.status}\\nNotatki: ${r.notes || ''}`);
+            ics.push(`SUMMARY:${escapeICS(summary)}`);
+            ics.push(`DESCRIPTION:${escapeICS(description)}`);
+            ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
 
@@ -218,8 +240,10 @@ router.get('/export/:categoryIds', async (req, res) => {
 
         res.set({
             'Content-Type': 'text/calendar; charset=utf-8',
-            'Content-Disposition': `attachment; filename="export-${req.params.categoryIds}.ics"`,
-            'Cache-Control': 'no-cache'
+            'Content-Disposition': `attachment; filename="export.ics"`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
         });
 
         res.send(ics.join('\r\n'));
@@ -227,6 +251,35 @@ router.get('/export/:categoryIds', async (req, res) => {
         console.error('Export error:', err);
         res.status(500).send('Internal Server Error');
     }
+});
+
+// GET /export-test - Test endpoint with dummy data
+router.get('/export-test', (req, res) => {
+    const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const startStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const endStr = tomorrow.toISOString().split('T')[0].replace(/-/g, '');
+
+    const ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//HotelManager//Test//PL',
+        'METHOD:PUBLISH',
+        'X-WR-CALNAME:Testowy Kalendarz',
+        'BEGIN:VEVENT',
+        `UID:test-123@internal`,
+        `DTSTAMP:${now}`,
+        `DTSTART;VALUE=DATE:${startStr}`,
+        `DTEND;VALUE=DATE:${endStr}`,
+        'SUMMARY:TESTOWA REZERWACJA',
+        'DESCRIPTION:To jest testowy wpis kalendarza.',
+        'END:VEVENT',
+        'END:VCALENDAR'
+    ].join('\r\n');
+
+    res.set({ 'Content-Type': 'text/calendar', 'Content-Disposition': 'attachment; filename="test.ics"' });
+    res.send(ics);
 });
 
 module.exports = router;
