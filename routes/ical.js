@@ -242,10 +242,16 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
 
         const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
+        // Oblicz datę 30 dni temu do filtrowania historycznych rezerwacji
+        const dateThreshold = new Date();
+        dateThreshold.setDate(dateThreshold.getDate() - 30);
+        const thresholdString = dateThreshold.toISOString().split('T')[0];
+
         // Eksportuj wszystkie rezerwacje które nie są samymi blokami CLOSED z Booking.com
         // (rezerwacje z payment='booking' które są isNewIcal to bloki które Booking już zna)
+        // oraz pomin te starsze niż 30 dni
         const exportableReservations = reservations.filter(r =>
-            !(r.isNewIcal && r.payment === 'booking')
+            !(r.isNewIcal && r.payment === 'booking') && r.checkOut >= thresholdString
         );
 
         exportableReservations.forEach(r => {
@@ -316,8 +322,16 @@ router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
             'X-WR-TIMEZONE:Europe/Warsaw'
         ];
 
+        // Oblicz datę 30 dni temu
+        const dateThreshold = new Date();
+        dateThreshold.setDate(dateThreshold.getDate() - 30);
+        const thresholdString = dateThreshold.toISOString().split('T')[0];
+
         // Eksportuj wszystkie rezerwacje które nie są samymi blokami CLOSED z Booking.com
-        const exportable = reservations.filter(r => !(r.isNewIcal && r.payment === 'booking'));
+        // oraz pomiń stare rezerwacje historyczne (>30 dni)
+        const exportable = reservations.filter(r =>
+            !(r.isNewIcal && r.payment === 'booking') && r.checkOut >= thresholdString
+        );
 
         exportable.forEach(r => {
             const start = r.checkIn.replace(/-/g, '');
