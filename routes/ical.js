@@ -11,6 +11,14 @@ router.post('/sync', async (req, res) => {
     try {
         const events = await ical.async.fromURL(url);
 
+        const allEventKeys = Object.keys(events).filter(k => events[k].type === 'VEVENT');
+        console.log(`[iCal DIAG] Feed URL: ${url.substring(0, 60)}...`);
+        console.log(`[iCal DIAG] Znaleziono VEVENT w feedzie: ${allEventKeys.length}`);
+        allEventKeys.forEach((k, i) => {
+            const ev = events[k];
+            console.log(`[iCal DIAG]   [${i + 1}] UID=${ev.uid} | SUMMARY=${ev.summary} | START=${ev.start} | END=${ev.end}`);
+        });
+
         let importedCount = 0;
         let skippedCount = 0;
         let conflictCount = 0;
@@ -131,6 +139,7 @@ router.post('/sync', async (req, res) => {
                 }
 
                 if (assignedRoomId) {
+                    console.log(`[iCal DIAG]   → Przydzielono pokój ID=${assignedRoomId} dla UID=${uid}`);
                     const newRes = await prisma.reservation.create({
                         data: {
                             externalId: uid,
@@ -148,6 +157,7 @@ router.post('/sync', async (req, res) => {
                     existingResvs.push(newRes);
                     importedCount++;
                 } else {
+                    console.log(`[iCal DIAG]   → KONFLIKT (brak wolnego pokoju) dla UID=${uid}, daty=${checkInString}→${checkOutString}`);
                     conflictCount++;
                 }
             }
@@ -170,6 +180,7 @@ router.post('/sync', async (req, res) => {
             }
         }
 
+        console.log(`[iCal DIAG] WYNIK: imported=${importedCount}, skipped=${skippedCount}, conflict=${conflictCount}, cancelled=${cancelledCount}`);
         res.json({ importedCount, skippedCount, conflictCount, cancelledCount });
     } catch (err) {
         console.error('iCal processing error:', err);
