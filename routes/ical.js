@@ -242,24 +242,25 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
 
         const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
+        // Eksportuj wszystkie rezerwacje które nie są samymi blokami CLOSED z Booking.com
+        // (rezerwacje z payment='booking' które są isNewIcal to bloki które Booking już zna)
         const exportableReservations = reservations.filter(r =>
-            !r.isNewIcal && r.payment !== 'booking'
+            !(r.isNewIcal && r.payment === 'booking')
         );
 
         exportableReservations.forEach(r => {
             const start = r.checkIn.replace(/-/g, '');
             const end = r.checkOut.replace(/-/g, '');
-            const uid = r.externalId || `res-${r.id}@hotelmanager.internal`;
-            const summary = `RESERVATION - ${r.guest.firstName} ${r.guest.lastName}`;
-            const description = `Pokój: ${r.room.number} ${r.room.name}\nStatus: ${r.status}\nNotatki: ${r.notes || ''}`;
+            // Unikalny UID per rezerwacja per pokój
+            const uid = `res-${r.id}-room-${r.roomId}@hotelmanager.internal`;
 
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
-            ics.push(`SUMMARY:${escapeICS(summary)}`);
-            ics.push(`DESCRIPTION:${escapeICS(description)}`);
+            // Format identyczny jak Booking.com — dzięki temu Booking poprawnie blokuje daty
+            ics.push('SUMMARY:CLOSED - Not available');
             ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
@@ -315,21 +316,22 @@ router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
             'X-WR-TIMEZONE:Europe/Warsaw'
         ];
 
-        const exportable = reservations.filter(r => !r.isNewIcal && r.payment !== 'booking');
+        // Eksportuj wszystkie rezerwacje które nie są samymi blokami CLOSED z Booking.com
+        const exportable = reservations.filter(r => !(r.isNewIcal && r.payment === 'booking'));
 
         exportable.forEach(r => {
             const start = r.checkIn.replace(/-/g, '');
             const end = r.checkOut.replace(/-/g, '');
-            const uid = r.externalId || `res-${r.id}@hotelmanager.internal`;
-            const summary = `RESERVATION - ${r.guest.firstName} ${r.guest.lastName}`;
-            const description = `Pokój: ${r.room.number}\nStatus: ${r.status}\nNotatki: ${r.notes || ''}`;
+            // Unikalny UID per rezerwacja
+            const uid = `res-${r.id}-room-${r.roomId}@hotelmanager.internal`;
+
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
-            ics.push(`SUMMARY:${escapeICS(summary)}`);
-            ics.push(`DESCRIPTION:${escapeICS(description)}`);
+            // Format identyczny jak Booking.com
+            ics.push('SUMMARY:CLOSED - Not available');
             ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
