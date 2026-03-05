@@ -1,7 +1,6 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // GET all rooms
 router.get('/', async (req, res) => {
@@ -30,7 +29,7 @@ router.put('/:id/status', async (req, res) => {
 
 // POST create room
 router.post('/', async (req, res) => {
-    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status } = req.body;
+    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status, categoryId } = req.body;
 
     if (!number || !name) {
         return res.status(400).json({ error: 'Numer i nazwa pokoju są wymagane' });
@@ -47,7 +46,8 @@ router.post('/', async (req, res) => {
                 maxGuests: parseInt(maxGuests),
                 pricePerNight: parseFloat(pricePerNight) || 0,
                 priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,
-                status: status || 'clean'
+                status: status || 'clean',
+                categoryId: categoryId || null
             }
         });
         res.status(201).json(room);
@@ -63,7 +63,7 @@ router.post('/', async (req, res) => {
 // PUT update room
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
-    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status } = req.body;
+    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status, categoryId } = req.body;
 
     if (!number || !name) {
         return res.status(400).json({ error: 'Numer i nazwa pokoju są wymagane' });
@@ -81,7 +81,8 @@ router.put('/:id', async (req, res) => {
                 maxGuests: parseInt(maxGuests),
                 pricePerNight: parseFloat(pricePerNight) || 0,
                 priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,
-                status: status || 'clean'
+                status: status || 'clean',
+                categoryId: categoryId !== undefined ? categoryId : undefined
             }
         });
         res.json(room);

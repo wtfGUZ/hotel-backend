@@ -1,8 +1,7 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const ical = require('node-ical');
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // POST sync iCal
 router.post('/sync', async (req, res) => {
@@ -158,18 +157,22 @@ router.post('/sync', async (req, res) => {
         }
 
         // Auto-delete cancelled Booking.com reservations
-        const cancelledResvs = existingResvs.filter(r =>
-            r.externalId !== null &&
-            r.externalId !== undefined &&
-            !activeUids.has(r.externalId)
-        );
-
+        // SAFETY: only run if the feed returned at least 1 event
+        // to prevent accidental mass-deletion on empty/error feeds
         let cancelledCount = 0;
-        if (cancelledResvs.length > 0) {
-            await prisma.reservation.deleteMany({
-                where: { id: { in: cancelledResvs.map(r => r.id) } }
-            });
-            cancelledCount = cancelledResvs.length;
+        if (activeUids.size > 0) {
+            const cancelledResvs = existingResvs.filter(r =>
+                r.externalId !== null &&
+                r.externalId !== undefined &&
+                !activeUids.has(r.externalId)
+            );
+
+            if (cancelledResvs.length > 0) {
+                await prisma.reservation.deleteMany({
+                    where: { id: { in: cancelledResvs.map(r => r.id) } }
+                });
+                cancelledCount = cancelledResvs.length;
+            }
         }
 
         res.json({ importedCount, skippedCount, conflictCount, cancelledCount });

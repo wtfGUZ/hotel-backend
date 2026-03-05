@@ -1,8 +1,7 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
-const prisma = new PrismaClient();
 
 const SALT_ROUNDS = 10;
 

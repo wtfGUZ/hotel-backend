@@ -1,19 +1,31 @@
 const express = require('express');
 const cors = require('cors');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./lib/prisma');
+const authMiddleware = require('./middleware/auth');
 require('dotenv').config();
 
-const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS ograniczony do domeny frontendu
+// CORS — array of allowed origins
+const allowedOrigins = (process.env.FRONTEND_URL || 'https://hotel-frontend-dun.vercel.app')
+    .split(',').map(s => s.trim());
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'https://hotel-frontend-dun.vercel.app',
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 }));
 app.use(express.json());
+app.use(authMiddleware);
+
+
 
 // Routes
 app.use('/api/rooms', require('./routes/rooms'));
