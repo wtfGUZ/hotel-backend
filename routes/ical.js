@@ -212,6 +212,7 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
 
         const reservations = await prisma.reservation.findMany({
             where: {
+                archived: false,
                 room: {
                     categoryId: { in: ids }
                 }
@@ -268,14 +269,8 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
             ics.push(`DTSTAMP:${now}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
-
-            if (r.archived) {
-                ics.push('STATUS:CANCELLED');
-            } else {
-                // Format identyczny jak Booking.com — dzięki temu Booking poprawnie blokuje daty
-                ics.push('SUMMARY:CLOSED - Not available');
-                ics.push('TRANSP:OPAQUE');
-            }
+            ics.push('SUMMARY:CLOSED - Not available');
+            ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
 
@@ -304,7 +299,7 @@ router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
         if (!room) return res.status(404).send('Room not found');
 
         const reservations = await prisma.reservation.findMany({
-            where: { roomId },
+            where: { archived: false, roomId },
             include: { guest: true, room: true }
         });
 
@@ -352,14 +347,8 @@ router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
             ics.push(`DTSTAMP:${now}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
-
-            if (r.archived) {
-                ics.push('STATUS:CANCELLED');
-            } else {
-                // Format identyczny jak Booking.com
-                ics.push('SUMMARY:CLOSED - Not available');
-                ics.push('TRANSP:OPAQUE');
-            }
+            ics.push('SUMMARY:CLOSED - Not available');
+            ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
 
