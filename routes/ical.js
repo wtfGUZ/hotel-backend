@@ -88,16 +88,15 @@ router.post('/sync', async (req, res) => {
                 const checkOutString = toDateString(end);
                 const guestName = parseGuestName(event.summary);
 
-                // CLOSED/NOT AVAILABLE — całkowicie ignoruj, nie blokuj pokojów
-                if (guestName === null) {
-                    console.log(`[iCal DIAG]   → POMINIĘTO CLOSED/NOT AVAILABLE UID=${uid}`);
-                    skippedCount++;
-                    continue;
-                }
+                // Booking.com wysyła CLOSED/NOT AVAILABLE gdy pokój jest zajęty (bez imienia gościa ze względów GDPR)
+                // Traktujemy je jako anonimowe rezerwacje "Gość Booking" — blokują pokój w kalendarzu
+                activeUids.add(uid);
 
-                activeUids.add(uid); // śledź UID tylko dla prawdziwych rezerwacji
+                const bookingGuest = guestName
+                    ? await findOrCreateGuest(guestName)
+                    : await getFallbackGuest();
 
-                const bookingGuest = await findOrCreateGuest(guestName);
+                console.log(`[iCal DIAG]   Przetwarzanie: UID=${uid} | typ=${guestName ? 'REZERWACJA' : 'CLOSED blok'} | gość=${guestName || 'Gość Booking'}`);
 
                 const existing = existingResvs.find(r => r.externalId === uid);
 
