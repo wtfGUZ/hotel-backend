@@ -50,6 +50,9 @@ model Reservation {
 
   guest     Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
   room      Room     @relation(fields: [roomId], references: [id])
+
+  @@index([roomId, checkIn, checkOut])
+  @@index([archived])
 }
 
 model Setting {

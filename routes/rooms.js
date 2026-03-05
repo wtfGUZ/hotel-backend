@@ -41,8 +41,8 @@ router.post('/', async (req, res) => {
     try {
         const room = await prisma.room.create({
             data: {
-                number,
-                name,
+                number: number.trim(),
+                name: name.trim(),
                 maxGuests: parseInt(maxGuests),
                 pricePerNight: parseFloat(pricePerNight) || 0,
                 priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,
@@ -77,8 +77,8 @@ router.put('/:id', async (req, res) => {
         const room = await prisma.room.update({
             where: { id: Number(id) },
             data: {
-                number,
-                name,
+                number: number.trim(),
+                name: name.trim(),
                 maxGuests: parseInt(maxGuests),
                 pricePerNight: parseFloat(pricePerNight) || 0,
                 priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,

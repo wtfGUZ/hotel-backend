@@ -39,7 +39,7 @@ router.put('/:id', async (req, res) => {
     try {
         const guest = await prisma.guest.update({
             where: { id },
-            data: { firstName, lastName, email, phone }
+            data: { firstName: firstName?.trim(), lastName: lastName?.trim(), email: email?.trim(), phone: phone?.trim() }
         });
         res.json(guest);
     } catch (err) {

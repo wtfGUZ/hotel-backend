@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const prisma = require('./lib/prisma');
 const authMiddleware = require('./middleware/auth');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
@@ -27,11 +28,22 @@ app.use(authMiddleware);
 
 
 
+// Rate limiter for PIN endpoints (brute-force protection)
+const pinLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minut
+    max: 10, // max 10 prób
+    message: { error: 'Zbyt wiele prób. Spróbuj ponownie za 15 minut.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
 // Routes
 app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/guests', require('./routes/guests'));
 app.use('/api/reservations', require('./routes/reservations'));
 app.use('/api/ical', require('./routes/ical'));
+app.use('/api/settings/verify-pin', pinLimiter);
+app.use('/api/settings/pin', pinLimiter);
 app.use('/api/settings', require('./routes/settings'));
 
 // Global error handlers
