@@ -22,13 +22,16 @@ router.post('/sync', async (req, res) => {
             if (!summary) return null;
             const s = summary.trim();
             const cleaned = s.replace(/^BOOKING\.COM\s*[-–]\s*/i, '').trim();
+            if (cleaned.toUpperCase().includes('CLOSED') || cleaned.toUpperCase().includes('NOT AVAILABLE')) {
+                return null;
+            }
             return cleaned || null;
         };
 
         const findOrCreateGuest = async (rawName) => {
             const parts = rawName.trim().split(/\s+/);
             const firstName = parts[0] || 'Gość';
-            const lastName = parts.slice(1).join(' ') || 'Booking.com';
+            const lastName = parts.slice(1).join(' ') || 'Booking';
             let guest = await prisma.guest.findFirst({ where: { firstName, lastName } });
             if (!guest) {
                 guest = await prisma.guest.create({ data: { firstName, lastName, email: '', phone: '' } });
@@ -39,9 +42,9 @@ router.post('/sync', async (req, res) => {
         let fallbackGuest = null;
         const getFallbackGuest = async () => {
             if (!fallbackGuest) {
-                fallbackGuest = await prisma.guest.findFirst({ where: { firstName: 'Gość', lastName: 'Booking.com' } });
+                fallbackGuest = await prisma.guest.findFirst({ where: { firstName: 'Gość', lastName: 'Booking' } });
                 if (!fallbackGuest) {
-                    fallbackGuest = await prisma.guest.create({ data: { firstName: 'Gość', lastName: 'Booking.com', email: '', phone: '' } });
+                    fallbackGuest = await prisma.guest.create({ data: { firstName: 'Gość', lastName: 'Booking', email: '', phone: '' } });
                 }
             }
             return fallbackGuest;
