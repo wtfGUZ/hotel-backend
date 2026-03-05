@@ -218,7 +218,11 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
 
         const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
-        reservations.forEach(r => {
+        const exportableReservations = reservations.filter(r =>
+            !r.isNewIcal && r.payment !== 'booking'
+        );
+
+        exportableReservations.forEach(r => {
             const start = r.checkIn.replace(/-/g, '');
             const end = r.checkOut.replace(/-/g, '');
             const uid = r.externalId || `res-${r.id}@hotelmanager.internal`;
