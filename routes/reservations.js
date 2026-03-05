@@ -50,11 +50,15 @@ router.post('/', async (req, res) => {
                     { checkIn: { lt: checkOut } },
                     { checkOut: { gt: checkIn } }
                 ]
-            }
+            },
+            include: { guest: true, room: true }
         });
 
         if (overlapping) {
-            return res.status(409).json({ error: 'Wybrany pokój jest zajęty w tych terminach' });
+            const guestName = overlapping.guest ? `${overlapping.guest.firstName} ${overlapping.guest.lastName}` : 'Nieznany';
+            return res.status(409).json({
+                error: `Konflikt Rezerwacji!\n\nPokój ${overlapping.room.number} jest już zajęty w tych terminach:\n\nGość: ${guestName}\nData: ${new Date(overlapping.checkIn).toLocaleDateString('pl-PL')} - ${new Date(overlapping.checkOut).toLocaleDateString('pl-PL')}\n\nWybierz inny pokój lub zmień daty.`
+            });
         }
 
         const resv = await prisma.reservation.create({
@@ -92,11 +96,15 @@ router.put('/:id', async (req, res) => {
                     { checkIn: { lt: checkOut } },
                     { checkOut: { gt: checkIn } }
                 ]
-            }
+            },
+            include: { guest: true, room: true }
         });
 
         if (overlapping) {
-            return res.status(409).json({ error: 'Wybrany pokój jest zajęty w tych terminach' });
+            const guestName = overlapping.guest ? `${overlapping.guest.firstName} ${overlapping.guest.lastName}` : 'Nieznany';
+            return res.status(409).json({
+                error: `Konflikt Rezerwacji!\n\nPokój ${overlapping.room.number} jest wytypowany do przydziału, ale jest on już zajęty w tych terminach:\n\nGość: ${guestName}\nData: ${new Date(overlapping.checkIn).toLocaleDateString('pl-PL')} - ${new Date(overlapping.checkOut).toLocaleDateString('pl-PL')}\n\nWybierz inny pokój lub zmień daty.`
+            });
         }
 
         const resv = await prisma.reservation.update({
