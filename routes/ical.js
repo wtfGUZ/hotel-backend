@@ -171,20 +171,18 @@ router.post('/sync', async (req, res) => {
         }
 
         let cancelledCount = 0;
-        if (activeUids.size > 0) {
-            const cancelledResvs = existingResvs.filter(r =>
-                r.externalId !== null &&
-                r.externalId !== undefined &&
-                !activeUids.has(r.externalId) &&
-                candidateRoomIds.has(r.roomId) // ← KLUCZ: tylko pokoje tej kategorii!
-            );
+        const cancelledResvs = existingResvs.filter(r =>
+            r.externalId !== null &&
+            r.externalId !== undefined &&
+            !activeUids.has(r.externalId) &&
+            candidateRoomIds.has(r.roomId) // ← KLUCZ: tylko pokoje tej kategorii (lub ten konkretny pokój)
+        );
 
-            if (cancelledResvs.length > 0) {
-                await prisma.reservation.deleteMany({
-                    where: { id: { in: cancelledResvs.map(r => r.id) } }
-                });
-                cancelledCount = cancelledResvs.length;
-            }
+        if (cancelledResvs.length > 0) {
+            await prisma.reservation.deleteMany({
+                where: { id: { in: cancelledResvs.map(r => r.id) } }
+            });
+            cancelledCount = cancelledResvs.length;
         }
 
         console.log(`[iCal DIAG] WYNIK: imported=${importedCount}, skipped=${skippedCount}, conflict=${conflictCount}, cancelled=${cancelledCount}`);
