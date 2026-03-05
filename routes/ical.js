@@ -80,14 +80,12 @@ router.post('/sync', async (req, res) => {
 
                 if (existing) {
                     if (existing.checkIn !== checkInString ||
-                        existing.checkOut !== checkOutString ||
-                        existing.guestId !== bookingGuest.id) {
+                        existing.checkOut !== checkOutString) {
                         await prisma.reservation.update({
                             where: { id: existing.id },
                             data: {
                                 checkIn: checkInString,
-                                checkOut: checkOutString,
-                                guestId: bookingGuest.id
+                                checkOut: checkOutString
                             }
                         });
                         importedCount++;
