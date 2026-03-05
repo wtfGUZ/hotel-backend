@@ -4,8 +4,14 @@
 const authMiddleware = (req, res, next) => {
     const secret = process.env.API_SECRET;
 
-    // If no secret is configured, skip auth (dev mode)
+    // 1. If no secret is configured, skip auth (dev/public mode)
     if (!secret) return next();
+
+    // 2. EXCEPTION: Allow public GET requests to iCal export links
+    // Booking.com needs to access these without a Bearer token.
+    if (req.method === 'GET' && req.originalUrl.includes('/export/')) {
+        return next();
+    }
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

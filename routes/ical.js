@@ -21,7 +21,6 @@ router.post('/sync', async (req, res) => {
         const parseGuestName = (summary) => {
             if (!summary) return null;
             const s = summary.trim();
-            // Removed blocked keywords check so we don't return null for legitimate Booking.com blocks
             const cleaned = s.replace(/^BOOKING\.COM\s*[-–]\s*/i, '').trim();
             return cleaned || null;
         };
@@ -68,8 +67,6 @@ router.post('/sync', async (req, res) => {
                 const checkOutString = toDateString(end);
                 const guestName = parseGuestName(event.summary);
 
-                // We no longer skip events with 'closed' keywords. We want them in the calendar!
-
                 activeUids.add(uid);
 
                 const bookingGuest = guestName
@@ -78,8 +75,6 @@ router.post('/sync', async (req, res) => {
 
                 const existing = existingResvs.find(r => r.externalId === uid);
 
-                // If it already exists, just update checkIn/checkOut/guestId
-                // We keep the room it was already assigned to to avoid unnecessary shuffling.
                 if (existing) {
                     if (existing.checkIn !== checkInString ||
                         existing.checkOut !== checkOutString ||
@@ -101,9 +96,6 @@ router.post('/sync', async (req, res) => {
 
                 let assignedRoomId = null;
 
-                // Find a free room. If categoryId is specified, only look in that category.
-                // If a category was requested but it has no assigned rooms, we will not assign the booking
-                // (it will fall into conflictCount to alert the user).
                 let candidateRooms = allRooms;
                 if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
                     candidateRooms = allRooms.filter(r => categoryIds.includes(String(r.categoryId)));
@@ -156,9 +148,6 @@ router.post('/sync', async (req, res) => {
             }
         }
 
-        // Auto-delete cancelled Booking.com reservations
-        // SAFETY: only run if the feed returned at least 1 event
-        // to prevent accidental mass-deletion on empty/error feeds
         let cancelledCount = 0;
         if (activeUids.size > 0) {
             const cancelledResvs = existingResvs.filter(r =>
@@ -179,6 +168,64 @@ router.post('/sync', async (req, res) => {
     } catch (err) {
         console.error('iCal processing error:', err);
         res.status(500).json({ error: 'Błąd podczas synchronizacji iCal' });
+    }
+});
+
+// GET /export/:categoryIds - Export internal reservations to iCal (ICS)
+router.get('/export/:categoryIds', async (req, res) => {
+    try {
+        const ids = req.params.categoryIds.split(',').map(id => id.trim());
+
+        const reservations = await prisma.reservation.findMany({
+            where: {
+                archived: false,
+                room: {
+                    categoryId: { in: ids }
+                }
+            },
+            include: {
+                guest: true,
+                room: true
+            }
+        });
+
+        let ics = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//HotelManager//iCal Export//PL',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH'
+        ];
+
+        const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+        reservations.forEach(r => {
+            const start = r.checkIn.replace(/-/g, '');
+            const end = r.checkOut.replace(/-/g, '');
+            const uid = r.externalId || `res-${r.id}@hotelmanager.internal`;
+
+            ics.push('BEGIN:VEVENT');
+            ics.push(`UID:${uid}`);
+            ics.push(`DTSTAMP:${now}`);
+            ics.push(`DTSTART;VALUE=DATE:${start}`);
+            ics.push(`DTEND;VALUE=DATE:${end}`);
+            ics.push(`SUMMARY:RESERVATION - ${r.guest.firstName} ${r.guest.lastName}`);
+            ics.push(`DESCRIPTION:Pokój: ${r.room.number} ${r.room.name}\\nStatus: ${r.status}\\nNotatki: ${r.notes || ''}`);
+            ics.push('END:VEVENT');
+        });
+
+        ics.push('END:VCALENDAR');
+
+        res.set({
+            'Content-Type': 'text/calendar; charset=utf-8',
+            'Content-Disposition': `attachment; filename="export-${req.params.categoryIds}.ics"`,
+            'Cache-Control': 'no-cache'
+        });
+
+        res.send(ics.join('\r\n'));
+    } catch (err) {
+        console.error('Export error:', err);
+        res.status(500).send('Internal Server Error');
     }
 });
 
