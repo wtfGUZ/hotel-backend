@@ -58,6 +58,16 @@ router.post('/sync', async (req, res) => {
 
         const activeUids = new Set();
 
+        // Wyznacz pokoje kandydujące dla tej synchronizacji (poza pętlą zdarzeń)
+        let candidateRooms = allRooms;
+        if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+            candidateRooms = allRooms.filter(r => categoryIds.includes(String(r.categoryId)));
+        } else if (categoryId) {
+            candidateRooms = allRooms.filter(r => r.categoryId === String(categoryId));
+        }
+        // Zbiór ID pokoi tej kategorii — używany do zawężenia kasowania
+        const candidateRoomIds = new Set(candidateRooms.map(r => r.id));
+
         for (const key in events) {
             if (events[key].type === 'VEVENT') {
                 const event = events[key];
@@ -97,13 +107,7 @@ router.post('/sync', async (req, res) => {
 
                 let assignedRoomId = null;
 
-                let candidateRooms = allRooms;
-                if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
-                    candidateRooms = allRooms.filter(r => categoryIds.includes(String(r.categoryId)));
-                } else if (categoryId) {
-                    candidateRooms = allRooms.filter(r => r.categoryId === String(categoryId));
-                }
-
+                // Kandydaci są już wyznaczeni wyżej (poza pętlą)
                 for (const room of candidateRooms) {
                     const hasConflict = existingResvs.some(r => {
                         if (r.roomId !== room.id) return false;
@@ -154,7 +158,8 @@ router.post('/sync', async (req, res) => {
             const cancelledResvs = existingResvs.filter(r =>
                 r.externalId !== null &&
                 r.externalId !== undefined &&
-                !activeUids.has(r.externalId)
+                !activeUids.has(r.externalId) &&
+                candidateRoomIds.has(r.roomId) // ← KLUCZ: tylko pokoje tej kategorii!
             );
 
             if (cancelledResvs.length > 0) {
