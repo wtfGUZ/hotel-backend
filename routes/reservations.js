@@ -122,7 +122,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        await prisma.reservation.delete({ where: { id } });
+        await prisma.reservation.update({ where: { id }, data: { archived: true } });
         res.status(204).send();
     } catch (err) {
         res.status(500).json({ error: 'Failed to delete reservation' });
@@ -137,8 +137,9 @@ router.delete('/bulk/delete', async (req, res) => {
     }
 
     try {
-        await prisma.reservation.deleteMany({
-            where: { id: { in: ids } }
+        await prisma.reservation.updateMany({
+            where: { id: { in: ids } },
+            data: { archived: true }
         });
         res.status(204).send();
     } catch (err) {
