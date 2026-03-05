@@ -13,6 +13,7 @@ model Room {
   number             String        @unique
   name               String
   categoryId         String?
+  icalUrl            String?
   maxGuests          Int
   pricePerNight      Float
   priceWithBreakfast Float

@@ -5,7 +5,7 @@ const router = express.Router();
 
 // POST sync iCal
 router.post('/sync', async (req, res) => {
-    const { url, categoryId, categoryIds } = req.body;
+    const { url, categoryId, categoryIds, roomId } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
     try {
@@ -68,7 +68,10 @@ router.post('/sync', async (req, res) => {
 
         // Wyznacz pokoje kandydujące dla tej synchronizacji (poza pętlą zdarzeń)
         let candidateRooms = allRooms;
-        if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+        if (roomId) {
+            // Per-room sync: tylko ten jeden pokój
+            candidateRooms = allRooms.filter(r => r.id === Number(roomId));
+        } else if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
             candidateRooms = allRooms.filter(r => categoryIds.includes(String(r.categoryId)));
         } else if (categoryId) {
             candidateRooms = allRooms.filter(r => r.categoryId === String(categoryId));
@@ -274,6 +277,75 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
         res.send(ics.join('\r\n'));
     } catch (err) {
         console.error('Export error:', err);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// GET /export/room/:roomId/calendar.ics - Export iCal for a single physical room
+router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
+    try {
+        const roomId = Number(req.params.roomId);
+        const room = await prisma.room.findUnique({ where: { id: roomId } });
+        if (!room) return res.status(404).send('Room not found');
+
+        const reservations = await prisma.reservation.findMany({
+            where: { archived: false, roomId },
+            include: { guest: true, room: true }
+        });
+
+        const escapeICS = (str) => {
+            if (!str) return '';
+            return str.toString()
+                .replace(/\\/g, '\\\\')
+                .replace(/,/g, '\\,')
+                .replace(/;/g, '\\;')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '');
+        };
+
+        const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+        let ics = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//HotelManager//iCal Export//PL',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH',
+            `X-WR-CALNAME:${escapeICS(`Pokój ${room.number}`)}`,
+            'X-WR-TIMEZONE:Europe/Warsaw'
+        ];
+
+        const exportable = reservations.filter(r => !r.isNewIcal && r.payment !== 'booking');
+
+        exportable.forEach(r => {
+            const start = r.checkIn.replace(/-/g, '');
+            const end = r.checkOut.replace(/-/g, '');
+            const uid = r.externalId || `res-${r.id}@hotelmanager.internal`;
+            const summary = `RESERVATION - ${r.guest.firstName} ${r.guest.lastName}`;
+            const description = `Pokój: ${r.room.number}\nStatus: ${r.status}\nNotatki: ${r.notes || ''}`;
+            ics.push('BEGIN:VEVENT');
+            ics.push(`UID:${uid}`);
+            ics.push(`DTSTAMP:${now}`);
+            ics.push(`DTSTART;VALUE=DATE:${start}`);
+            ics.push(`DTEND;VALUE=DATE:${end}`);
+            ics.push(`SUMMARY:${escapeICS(summary)}`);
+            ics.push(`DESCRIPTION:${escapeICS(description)}`);
+            ics.push('TRANSP:OPAQUE');
+            ics.push('END:VEVENT');
+        });
+
+        ics.push('END:VCALENDAR');
+
+        res.set({
+            'Content-Type': 'text/calendar; charset=utf-8',
+            'Content-Disposition': `attachment; filename="room-${roomId}.ics"`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
+        res.send(ics.join('\r\n'));
+    } catch (err) {
+        console.error('Per-room export error:', err);
         res.status(500).send('Internal Server Error');
     }
 });

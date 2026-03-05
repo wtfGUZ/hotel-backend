@@ -29,7 +29,7 @@ router.put('/:id/status', async (req, res) => {
 
 // POST create room
 router.post('/', async (req, res) => {
-    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status, categoryId } = req.body;
+    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status, categoryId, icalUrl } = req.body;
 
     if (!number || !name) {
         return res.status(400).json({ error: 'Numer i nazwa pokoju są wymagane' });
@@ -47,7 +47,8 @@ router.post('/', async (req, res) => {
                 pricePerNight: parseFloat(pricePerNight) || 0,
                 priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,
                 status: status || 'clean',
-                categoryId: categoryId || null
+                categoryId: categoryId || null,
+                icalUrl: icalUrl || null
             }
         });
         res.status(201).json(room);
@@ -63,7 +64,7 @@ router.post('/', async (req, res) => {
 // PUT update room
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
-    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status, categoryId } = req.body;
+    const { number, name, maxGuests, pricePerNight, priceWithBreakfast, status, categoryId, icalUrl } = req.body;
 
     if (!number || !name) {
         return res.status(400).json({ error: 'Numer i nazwa pokoju są wymagane' });
@@ -82,7 +83,8 @@ router.put('/:id', async (req, res) => {
                 pricePerNight: parseFloat(pricePerNight) || 0,
                 priceWithBreakfast: parseFloat(priceWithBreakfast) || 0,
                 status: status || 'clean',
-                categoryId: categoryId !== undefined ? categoryId : undefined
+                categoryId: categoryId !== undefined ? categoryId : undefined,
+                icalUrl: icalUrl !== undefined ? (icalUrl || null) : undefined
             }
         });
         res.json(room);
