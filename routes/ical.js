@@ -88,11 +88,16 @@ router.post('/sync', async (req, res) => {
                 const checkOutString = toDateString(end);
                 const guestName = parseGuestName(event.summary);
 
-                activeUids.add(uid);
+                // CLOSED/NOT AVAILABLE — całkowicie ignoruj, nie blokuj pokojów
+                if (guestName === null) {
+                    console.log(`[iCal DIAG]   → POMINIĘTO CLOSED/NOT AVAILABLE UID=${uid}`);
+                    skippedCount++;
+                    continue;
+                }
 
-                const bookingGuest = guestName
-                    ? await findOrCreateGuest(guestName)
-                    : await getFallbackGuest();
+                activeUids.add(uid); // śledź UID tylko dla prawdziwych rezerwacji
+
+                const bookingGuest = await findOrCreateGuest(guestName);
 
                 const existing = existingResvs.find(r => r.externalId === uid);
 
