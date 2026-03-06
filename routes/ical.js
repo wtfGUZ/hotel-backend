@@ -240,10 +240,8 @@ router.get('/export/all/calendar.ics', async (req, res) => {
         dateThreshold.setDate(dateThreshold.getDate() - 30);
         const thresholdString = dateThreshold.toISOString().split('T')[0];
 
-        // Eksportuj wszystkie rezerwacje które nie są samymi blokami CLOSED z Booking.com
-        const exportableReservations = reservations.filter(r =>
-            !(r.isNewIcal && r.payment === 'booking') && r.checkOut >= thresholdString
-        );
+        // Wyświetlamy WSZYSTKIE rezerwacje (z booking oraz wewnętrzne), bo to kalendarz do podglądu na telefonie
+        const exportableReservations = reservations.filter(r => r.checkOut >= thresholdString);
 
         exportableReservations.forEach(r => {
             const start = r.checkIn.replace(/-/g, '');
@@ -251,12 +249,19 @@ router.get('/export/all/calendar.ics', async (req, res) => {
             // Unikalny UID per rezerwacja per pokój
             const uid = `res-${r.id}-room-${r.roomId}@hotelmanager.internal`;
 
+            const guestName = r.guest ? `${r.guest.firstName} ${r.guest.lastName}`.trim() : 'Gość z Booking.com';
+            const roomName = r.room ? r.room.number : '?';
+            const phone = r.guest?.phone ? `Tel: ${r.guest.phone}` : '';
+            const summary = escapeICS(`P${roomName} - ${guestName}`);
+            const desc = escapeICS(`${phone}\nUwagi: ${r.notes || 'brak'}`);
+
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
-            ics.push('SUMMARY:CLOSED - Not available');
+            ics.push(`SUMMARY:${summary}`);
+            ics.push(`DESCRIPTION:${desc}`);
             ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
