@@ -255,13 +255,19 @@ router.get('/export/all/calendar.ics', async (req, res) => {
             const summary = escapeICS(`P${roomName} - ${guestName}`);
             const desc = escapeICS(`${phone}\nUwagi: ${r.notes || 'brak'}`);
 
+            const createdStr = r.createdAt ? new Date(r.createdAt).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z' : now;
+
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
+            ics.push(`CREATED:${createdStr}`);
+            ics.push(`LAST-MODIFIED:${createdStr}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
             ics.push(`SUMMARY:${summary}`);
             ics.push(`DESCRIPTION:${desc}`);
+            ics.push('STATUS:CONFIRMED');
+            ics.push('CLASS:PUBLIC');
             ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
@@ -348,12 +354,18 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
             // Unikalny UID per rezerwacja per pokój
             const uid = `res-${r.id}-room-${r.roomId}@hotelmanager.internal`;
 
+            const createdStr = r.createdAt ? new Date(r.createdAt).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z' : now;
+
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
+            ics.push(`CREATED:${createdStr}`);
+            ics.push(`LAST-MODIFIED:${createdStr}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
             ics.push('SUMMARY:CLOSED - Not available');
+            ics.push('STATUS:CONFIRMED');
+            ics.push('CLASS:PUBLIC');
             ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
@@ -426,12 +438,18 @@ router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
             // Unikalny UID per rezerwacja
             const uid = `res-${r.id}-room-${r.roomId}@hotelmanager.internal`;
 
+            const createdStr = r.createdAt ? new Date(r.createdAt).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z' : now;
+
             ics.push('BEGIN:VEVENT');
             ics.push(`UID:${uid}`);
             ics.push(`DTSTAMP:${now}`);
+            ics.push(`CREATED:${createdStr}`);
+            ics.push(`LAST-MODIFIED:${createdStr}`);
             ics.push(`DTSTART;VALUE=DATE:${start}`);
             ics.push(`DTEND;VALUE=DATE:${end}`);
             ics.push('SUMMARY:CLOSED - Not available');
+            ics.push('STATUS:CONFIRMED');
+            ics.push('CLASS:PUBLIC');
             ics.push('TRANSP:OPAQUE');
             ics.push('END:VEVENT');
         });
