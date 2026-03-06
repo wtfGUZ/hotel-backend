@@ -291,6 +291,85 @@ router.get('/export/:categoryIds/calendar.ics', async (req, res) => {
     }
 });
 
+// GET /export/all/calendar.ics - Export ALL internal reservations to iCal (ICS)
+router.get('/export/all/calendar.ics', async (req, res) => {
+    try {
+        const reservations = await prisma.reservation.findMany({
+            where: {
+                archived: false
+            },
+            include: {
+                guest: true,
+                room: true
+            }
+        });
+
+        // Helper to escape text for iCal
+        const escapeICS = (str) => {
+            if (!str) return '';
+            return str.toString()
+                .replace(/\\/g, '\\\\')
+                .replace(/,/g, '\\,')
+                .replace(/;/g, '\\;')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '');
+        };
+
+        let ics = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//HotelManager//iCal Export All//PL',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH',
+            `X-WR-CALNAME:${escapeICS('Wszystkie Rezerwacje')}`,
+            'X-WR-TIMEZONE:Europe/Warsaw'
+        ];
+
+        const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+        // Oblicz datę 30 dni temu do filtrowania historycznych rezerwacji
+        const dateThreshold = new Date();
+        dateThreshold.setDate(dateThreshold.getDate() - 30);
+        const thresholdString = dateThreshold.toISOString().split('T')[0];
+
+        // Eksportuj wszystkie rezerwacje które nie są samymi blokami CLOSED z Booking.com
+        const exportableReservations = reservations.filter(r =>
+            !(r.isNewIcal && r.payment === 'booking') && r.checkOut >= thresholdString
+        );
+
+        exportableReservations.forEach(r => {
+            const start = r.checkIn.replace(/-/g, '');
+            const end = r.checkOut.replace(/-/g, '');
+            // Unikalny UID per rezerwacja per pokój
+            const uid = `res-${r.id}-room-${r.roomId}@hotelmanager.internal`;
+
+            ics.push('BEGIN:VEVENT');
+            ics.push(`UID:${uid}`);
+            ics.push(`DTSTAMP:${now}`);
+            ics.push(`DTSTART;VALUE=DATE:${start}`);
+            ics.push(`DTEND;VALUE=DATE:${end}`);
+            ics.push('SUMMARY:CLOSED - Not available');
+            ics.push('TRANSP:OPAQUE');
+            ics.push('END:VEVENT');
+        });
+
+        ics.push('END:VCALENDAR');
+
+        res.set({
+            'Content-Type': 'text/calendar; charset=utf-8',
+            'Content-Disposition': `attachment; filename="all-reservations.ics"`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
+
+        res.send(ics.join('\r\n'));
+    } catch (err) {
+        console.error('Export all error:', err);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
 // GET /export/room/:roomId/calendar.ics - Export iCal for a single physical room
 router.get('/export/room/:roomId/calendar.ics', async (req, res) => {
     try {
